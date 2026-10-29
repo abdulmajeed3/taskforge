@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+coverage
+.next
+apps/web/dist
+apps/api/dist
+packages/*/dist
+prisma/migrations
+pnpm-lock.yaml
+package-lock.json
+*.min.js
+playwright-report
+test-results

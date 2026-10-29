@@ -1,0 +1,388 @@
+// TaskForge database schema.
+// See docs/DATABASE.md for the full design rationale, indexes, and migration workflow.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+enum ProjectMemberRole {
+  LEAD
+  CONTRIBUTOR
+}
+
+enum TaskStatus {
+  BACKLOG
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_UNASSIGNED
+  TASK_STATUS_CHANGED
+  TASK_DUE_SOON
+  COMMENT_ADDED
+  MENTIONED
+  INVITATION_RECEIVED
+  MEMBERSHIP_ROLE_CHANGED
+}
+
+enum ActivityAction {
+  ORGANIZATION_CREATED
+  ORGANIZATION_UPDATED
+  ORGANIZATION_ARCHIVED
+  MEMBER_INVITED
+  MEMBER_JOINED
+  MEMBER_REMOVED
+  MEMBER_ROLE_CHANGED
+  PROJECT_CREATED
+  PROJECT_UPDATED
+  PROJECT_ARCHIVED
+  TASK_CREATED
+  TASK_UPDATED
+  TASK_STATUS_CHANGED
+  TASK_ASSIGNED
+  TASK_UNASSIGNED
+  TASK_ARCHIVED
+  COMMENT_ADDED
+  LABEL_CREATED
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  avatarUrl       String?
+  isEmailVerified Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  memberships             OrganizationMembership[]
+  projectMemberships      ProjectMembership[]
+  refreshTokens           RefreshToken[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  createdProjects         Project[]                @relation("ProjectCreator")
+  createdTasks            Task[]                   @relation("TaskCreator")
+  assignedTasks           Task[]                   @relation("TaskAssignee")
+  comments                Comment[]
+  notifications           Notification[]
+  activityLogs             ActivityLog[]            @relation("ActivityActor")
+  invitationsSent          Invitation[]             @relation("InvitationInviter")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id                  String    @id @default(uuid())
+  userId              String
+  tokenHash           String    @unique
+  family              String
+  userAgent           String?
+  ipAddress           String?
+  revokedAt           DateTime?
+  replacedByTokenHash String?
+  expiresAt           DateTime
+  createdAt           DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([family])
+  @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Organizations & tenancy
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  memberships   OrganizationMembership[]
+  invitations   Invitation[]
+  projects      Project[]
+  tasks         Task[]
+  labels        Label[]
+  notifications Notification[]
+  activityLogs  ActivityLog[]
+
+  @@map("organizations")
+}
+
+model OrganizationMembership {
+  id             String         @id @default(uuid())
+  organizationId String
+  userId         String
+  role           MembershipRole @default(MEMBER)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_memberships")
+}
+
+model Invitation {
+  id             String           @id @default(uuid())
+  organizationId String
+  email          String
+  role           MembershipRole   @default(MEMBER)
+  tokenHash      String           @unique
+  status         InvitationStatus @default(PENDING)
+  invitedById    String
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime         @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User         @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, email])
+  @@map("invitations")
+}
+
+// ---------------------------------------------------------------------------
+// Projects
+// ---------------------------------------------------------------------------
+
+model Project {
+  id             String        @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  status         ProjectStatus @default(PLANNING)
+  startDate      DateTime?
+  dueDate        DateTime?
+  createdById    String
+  archivedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User                @relation("ProjectCreator", fields: [createdById], references: [id])
+  memberships  ProjectMembership[]
+  tasks        Task[]
+
+  @@index([organizationId, status])
+  @@map("projects")
+}
+
+model ProjectMembership {
+  id        String            @id @default(uuid())
+  projectId String
+  userId    String
+  role      ProjectMemberRole @default(CONTRIBUTOR)
+  createdAt DateTime          @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+  @@map("project_memberships")
+}
+
+model Label {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  color          String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  taskLabels   TaskLabel[]
+
+  @@unique([organizationId, name])
+  @@map("labels")
+}
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+model Task {
+  id             String       @id @default(uuid())
+  projectId      String
+  // Denormalized from Project for fast organization-scoped queries/indexes and
+  // as a second, directly-queryable tenancy boundary. Application services are
+  // responsible for keeping it equal to project.organizationId on create
+  // (enforced in TasksService, covered by tests) since Prisma cannot express a
+  // cross-table invariant like this at the schema level.
+  organizationId String
+  title          String
+  description    String?
+  status         TaskStatus   @default(BACKLOG)
+  priority       TaskPriority @default(MEDIUM)
+  position       Int          @default(0)
+  assigneeId     String?
+  createdById    String
+  dueDate        DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignee     User?        @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdBy    User         @relation("TaskCreator", fields: [createdById], references: [id])
+  comments     Comment[]
+  taskLabels   TaskLabel[]
+
+  @@index([projectId, status])
+  @@index([organizationId])
+  @@index([assigneeId])
+  @@index([dueDate])
+  @@map("tasks")
+}
+
+model TaskLabel {
+  taskId  String
+  labelId String
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  label Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, labelId])
+  @@index([labelId])
+  @@map("task_labels")
+}
+
+model Comment {
+  id        String    @id @default(uuid())
+  taskId    String
+  authorId  String
+  body      String
+  editedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  task   Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("comments")
+}
+
+// ---------------------------------------------------------------------------
+// Collaboration
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id             String            @id @default(uuid())
+  userId         String
+  organizationId String
+  type           NotificationType
+  title          String
+  body           String
+  data           Json?
+  readAt         DateTime?
+  createdAt      DateTime          @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([organizationId])
+  @@map("notifications")
+}
+
+model ActivityLog {
+  id             String         @id @default(uuid())
+  organizationId String
+  actorId        String?
+  action         ActivityAction
+  entityType     String
+  entityId       String
+  metadata       Json?
+  createdAt      DateTime       @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation("ActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+  @@map("activity_logs")
+}

@@ -1,0 +1,62 @@
+# Local development infrastructure for TaskForge.
+#
+# NOTE: this file was authored to the same standard as the rest of the codebase,
+# but could not be executed in the environment this project was built in (Docker
+# was not installed there). Local development in that environment instead used a
+# native PostgreSQL 18 service — see docs/IMPLEMENTATION_PLAN.md and
+# docs/TROUBLESHOOTING.md. If you have Docker installed, this file is the
+# documented, supported way to run Postgres locally.
+#
+# Usage: docker compose up -d postgres
+name: taskforge
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: taskforge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-taskforge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskforge_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-taskforge_dev}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - taskforge_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-taskforge}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: taskforge-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-taskforge}:${POSTGRES_PASSWORD:-taskforge_dev_password}@postgres:5432/${POSTGRES_DB:-taskforge_dev}?schema=public
+    ports:
+      - '${API_PORT:-3000}:3000'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000/api/v1}
+    container_name: taskforge-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '${WEB_PORT:-5173}:80'
+
+volumes:
+  taskforge_postgres_data:

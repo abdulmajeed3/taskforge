@@ -1,0 +1,62 @@
+{
+  "name": "taskforge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TaskForge — a multi-tenant project management SaaS application.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=26.11 <27",
+    "npm": ">=11"
+  },
+  "workspaces": [
+    "apps/api",
+    "apps/web",
+    "packages/*"
+  ],
+  "scripts": {
+    "prepare": "npm run build -w packages/shared",
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "build": "npm run build -w packages/shared && npm run build -w apps/api && npm run build -w apps/web",
+    "build:api": "npm run build -w packages/shared && npm run build -w apps/api",
+    "build:web": "npm run build -w packages/shared && npm run build -w apps/web",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck -w packages/shared && npm run typecheck -w apps/api && npm run typecheck -w apps/web",
+    "test": "npm run test -w apps/api && npm run test -w apps/web",
+    "test:api": "npm run test -w apps/api",
+    "test:web": "npm run test -w apps/web",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "db:generate": "prisma generate --config prisma/config.ts",
+    "db:migrate:dev": "prisma migrate dev --config prisma/config.ts",
+    "db:migrate:deploy": "prisma migrate deploy --config prisma/config.ts",
+    "db:migrate:reset": "prisma migrate reset --config prisma/config.ts",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio --config prisma/config.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.5",
+    "eslint": "10.13.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.7",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "prisma": "7.10.1",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
+  },
+  "allowScripts": {
+    "argon2@0.45.1": true,
+    "esbuild@0.28.2": true,
+    "prisma@7.10.1": true,
+    "unrs-resolver@1.12.2": true,
+    "@parcel/watcher@2.6.0": true,
+    "@prisma/engines@7.10.1": true,
+    "@scarf/scarf": false
+  }
+}
